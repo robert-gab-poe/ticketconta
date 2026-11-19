@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>TicketConta</title>
+  <meta name="description" content="Fotografía tus tickets y conviértelos en contabilidad.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <!-- iOS -->
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="TicketConta">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>TicketConta</h1>
+    <span id="netStatus" class="pill" hidden>Sin conexión</span>
+  </header>
+
+  <main>
+    <!-- ESCANEAR -->
+    <section id="view-scan" class="view active">
+      <div class="card hero">
+        <p class="muted">Haz una foto al ticket o súbela desde la galería. Se extraen los datos y se genera el asiento contable.</p>
+        <div class="btn-row">
+          <label class="btn primary big">
+            📷 Hacer foto
+            <input id="inCamera" type="file" accept="image/*" capture="environment" hidden>
+          </label>
+          <label class="btn big">
+            🖼️ Subir imagen
+            <input id="inFile" type="file" accept="image/*,application/pdf" multiple hidden>
+          </label>
+        </div>
+        <button id="btnManual" class="btn link">o introducir a mano</button>
+        <p id="engineHint" class="hint"></p>
+      </div>
+
+      <div id="queue"></div>
+
+      <!-- Formulario de revisión -->
+      <form id="ticketForm" class="card" hidden>
+        <div class="form-head">
+          <h2 id="formTitle">Revisar ticket</h2>
+          <img id="formThumb" alt="" class="thumb">
+        </div>
+        <div id="formWarn" class="warn" hidden></div>
+        <div class="grid">
+          <label>Fecha<input name="fecha" type="date" required></label>
+          <label>Nº factura / ticket<input name="numero" autocomplete="off"></label>
+          <label class="span2">Proveedor<input name="proveedor" required autocomplete="off"></label>
+          <label>NIF/CIF<input name="nif" autocomplete="off"></label>
+          <label>Forma de pago
+            <select name="pago">
+              <option value="tarjeta">Tarjeta / banco</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="pendiente">Pendiente de pago</option>
+            </select>
+          </label>
+          <label class="span2">Categoría / cuenta de gasto
+            <select name="cuenta" id="selCuenta"></select>
+          </label>
+          <label class="span2">Concepto<input name="concepto" autocomplete="off"></label>
+        </div>
+
+        <h3>Desglose de IVA</h3>
+        <table class="iva-table">
+          <thead><tr><th>Tipo %</th><th>Base</th><th>Cuota</th><th></th></tr></thead>
+          <tbody id="ivaRows"></tbody>
+        </table>
+        <button type="button" id="btnAddIva" class="btn small">+ Añadir tipo</button>
+
+        <div class="grid">
+          <label>Retención IRPF<input name="retencion" type="number" step="0.01" inputmode="decimal" value="0"></label>
+          <label>Total ticket<input name="total" type="number" step="0.01" inputmode="decimal" required></label>
+        </div>
+        <p id="checkTotal" class="hint"></p>
+
+        <details>
+          <summary>Asiento que se generará</summary>
+          <div id="previewEntry"></div>
+        </details>
+
+        <div class="btn-row">
+          <button type="button" id="btnCancel" class="btn">Descartar</button>
+          <button type="submit" class="btn primary">Guardar</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- TICKETS -->
+    <section id="view-list" class="view">
+      <div class="toolbar">
+        <input id="filterMonth" type="month" aria-label="Filtrar por mes">
+        <input id="filterText" type="search" placeholder="Buscar proveedor…">
+      </div>
+      <div id="listSummary" class="summary"></div>
+      <ul id="ticketList" class="list"></ul>
+    </section>
+
+    <!-- CONTABILIDAD -->
+    <section id="view-books" class="view">
+      <div class="toolbar">
+        <select id="booksPeriod" aria-label="Periodo"></select>
+      </div>
+      <div class="card">
+        <h2>Resumen</h2>
+        <div id="booksSummary"></div>
+      </div>
+      <div class="card">
+        <h2>Gasto por cuenta</h2>
+        <div id="booksByAccount"></div>
+      </div>
+      <div class="card">
+        <h2>Libro diario</h2>
+        <div id="booksJournal" class="scroll-x"></div>
+      </div>
+      <div class="card">
+        <h2>Exportar</h2>
+        <div class="btn-col">
+          <button id="expRegistro" class="btn">Libro registro de facturas recibidas (CSV)</button>
+          <button id="expDiario" class="btn">Libro diario (CSV)</button>
+          <button id="expA3" class="btn">Asientos para importar (CSV genérico)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- AJUSTES -->
+    <section id="view-settings" class="view">
+      <div class="card">
+        <h2>Reconocimiento con IA (Claude)</h2>
+        <p class="muted">Con una clave de API de Anthropic la lectura de tickets es mucho más precisa (desglose de IVA, NIF, categoría). Sin clave se usa OCR local, menos preciso.</p>
+        <label>Clave de API
+          <input id="setKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+        </label>
+        <label>Modelo
+          <select id="setModel">
+            <option value="claude-opus-5-5">Claude Opus 5.5 (máxima precisión)</option>
+            <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (más barato)</option>
+            <option value="claude-haiku-5-5">Claude Haiku 5.5 (el más barato)</option>
+          </select>
+        </label>
+        <p class="hint">La clave se guarda solo en este dispositivo y las fotos se envían directamente a la API de Anthropic.</p>
+      </div>
+      <div class="card">
+        <h2>Cuentas contables</h2>
+        <div class="grid">
+          <label>IVA soportado<input id="setIva" value="472"></label>
+          <label>Proveedores / acreedores<input id="setAcreedor" value="410"></label>
+          <label>Caja (efectivo)<input id="setCaja" value="570"></label>
+          <label>Bancos (tarjeta / transf.)<input id="setBanco" value="572"></label>
+          <label>Retenciones IRPF<input id="setRet" value="4751"></label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Copia de seguridad</h2>
+        <div class="btn-col">
+          <button id="btnBackup" class="btn">Descargar copia (JSON)</button>
+          <label class="btn">Restaurar copia<input id="inRestore" type="file" accept="application/json" hidden></label>
+          <button id="btnWipe" class="btn danger">Borrar todos los datos</button>
+        </div>
+      </div>
+      <button id="btnSaveSettings" class="btn primary wide">Guardar ajustes</button>
+      <p class="hint center" id="installHint"></p>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-view="scan" class="active"><span>📷</span>Escanear</button>
+    <button data-view="list"><span>🧾</span>Tickets</button>
+    <button data-view="books"><span>📒</span>Contabilidad</button>
+    <button data-view="settings"><span>⚙️</span>Ajustes</button>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
